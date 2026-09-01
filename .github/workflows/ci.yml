@@ -1,0 +1,45 @@
+name: CI
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: agentcloud
+          POSTGRES_USER: agentcloud
+          POSTGRES_PASSWORD: agentcloud
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U agentcloud"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql+asyncpg://agentcloud:agentcloud@localhost:5432/agentcloud
+      REDIS_URL: redis://localhost:6379/0
+      API_KEYS: ci-client:ci-secret
+      LLM_PROVIDER: mock
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: alembic upgrade head
+      - run: pytest --cov=app --cov-report=term-missing
+      - run: docker build -t agentcloud-api:test .
+
